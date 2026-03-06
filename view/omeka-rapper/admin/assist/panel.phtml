@@ -1,0 +1,25 @@
+<div class="sidebar">
+  <div class="section omeka-rapper-panel"
+       data-suggest-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'suggest']); ?>"
+       data-providers-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'providers']); ?>">
+    <h3>OmekaRapper</h3>
+    <p style="margin-top:0;">
+      AI cataloging assistant (starter).
+    </p>
+
+    <label for="omeka-rapper-text">Source text</label>
+    <textarea id="omeka-rapper-text" class="omeka-rapper-input" rows="8"
+      placeholder="Paste article text, abstract, OCR output, etc."></textarea>
+
+    <label for="omeka-rapper-provider">Provider</label>
+    <select id="omeka-rapper-provider" class="omeka-rapper-provider">
+      <option value="dummy">Dummy (test)</option>
+    </select>
+
+    <button type="button" class="button omeka-rapper-generate">Suggest metadata</button>
+    <button type="button" class="button omeka-rapper-apply-title" style="margin-left:.35rem;">Apply title</button>
+    <button type="button" class="button omeka-rapper-apply-abstract" style="margin-left:.35rem;">Apply abstract</button>
+
+    <div class="omeka-rapper-results" style="margin-top:1rem;"></div>
+  </div>
+</div>
