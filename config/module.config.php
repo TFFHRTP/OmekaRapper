@@ -38,6 +38,7 @@ return [
         ],
         'invokables' => [
             Service\ProviderModelCatalog::class => Service\ProviderModelCatalog::class,
+            Service\SuggestionEnricher::class => Service\SuggestionEnricher::class,
         ],
     ],
 

@@ -13,10 +13,24 @@ class DummyProvider implements ProviderInterface
     {
         $text = (string) ($input['text'] ?? '');
         $snippet = mb_substr(trim($text), 0, 160);
+        $properties = [];
+        $availableTerms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
+        $availableSet = array_fill_keys($availableTerms, true);
+
+        $title = $this->guessTitle($text) ?? '(Untitled)';
+        if (isset($availableSet['dcterms:title'])) {
+            $properties[] = ['term' => 'dcterms:title', 'values' => [$title]];
+        }
+        if ($snippet !== '' && (isset($availableSet['dcterms:abstract']) || isset($availableSet['dcterms:description']))) {
+            $properties[] = [
+                'term' => isset($availableSet['dcterms:abstract']) ? 'dcterms:abstract' : 'dcterms:description',
+                'values' => [$snippet],
+            ];
+        }
 
         // Always return the same schema our real providers will return.
         return [
-            'title' => $this->guessTitle($text) ?? '(Untitled)',
+            'title' => $title,
             'creators' => [],
             'date' => null,
             'publisher' => null,
@@ -25,6 +39,7 @@ class DummyProvider implements ProviderInterface
             'subjects' => [],
             'identifiers' => [],
             'language' => null,
+            'properties' => $properties,
             'confidence' => [
                 'title' => 0.10,
                 'abstract' => 0.20,

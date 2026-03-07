@@ -26,6 +26,24 @@ $modelsEndpoint = $this->url('admin/omeka-rapper', ['action' => 'models']);
 
     <div class="field">
         <div class="field-meta">
+            <label for="omekarapper_provider_timeout"><?php echo $escape($translate('Provider request timeout')); ?></label>
+            <div class="field-description">
+                <?php
+                $phpLimit = (int) ($settings['php_max_execution_time'] ?? 0);
+                $hint = $phpLimit > 0
+                    ? sprintf($translate('Seconds. Requests are clamped below PHP max_execution_time (%d seconds).'), $phpLimit)
+                    : $translate('Seconds. PHP max_execution_time is unlimited or not enforced here.');
+                echo $escape($hint);
+                ?>
+            </div>
+        </div>
+        <div class="inputs">
+            <input type="number" min="1" step="1" id="omekarapper_provider_timeout" name="omekarapper_provider_timeout" value="<?php echo $escape((string) ($settings['provider_timeout'] ?? 25)); ?>">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
             <label for="omekarapper_openai_enabled"><?php echo $escape($translate('Enable ChatGPT provider')); ?></label>
             <div class="field-description"><?php echo $escape($translate('Uses the OpenAI Responses API.')); ?></div>
         </div>

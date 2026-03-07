@@ -14,6 +14,8 @@ class AiClientManagerFactory implements FactoryInterface
     public function __invoke(ContainerInterface $container, $requestedName, ?array $options = null): AiClientManager
     {
         $settings = $container->get('Omeka\Settings');
+        $configuredTimeout = (int) $settings->get('omekarapper_provider_timeout', 25);
+        $requestTimeout = $this->clampTimeout($configuredTimeout);
 
         $providers = [
             new DummyProvider(),
@@ -29,7 +31,8 @@ class AiClientManagerFactory implements FactoryInterface
                 trim((string) $settings->get('omekarapper_openai_base_url', 'https://api.openai.com/v1/responses')) ?: 'https://api.openai.com/v1/responses',
                 $openAiApiKey,
                 'responses',
-                true
+                true,
+                $requestTimeout
             );
         }
 
@@ -42,7 +45,8 @@ class AiClientManagerFactory implements FactoryInterface
                 trim((string) $settings->get('omekarapper_codex_base_url', 'https://api.openai.com/v1/responses')) ?: 'https://api.openai.com/v1/responses',
                 $openAiApiKey,
                 'responses',
-                true
+                true,
+                $requestTimeout
             );
         }
 
@@ -54,7 +58,8 @@ class AiClientManagerFactory implements FactoryInterface
                 'Claude',
                 $anthropicApiKey,
                 trim((string) $settings->get('omekarapper_anthropic_model', 'claude-sonnet-4-0')) ?: 'claude-sonnet-4-0',
-                trim((string) $settings->get('omekarapper_anthropic_base_url', 'https://api.anthropic.com/v1/messages')) ?: 'https://api.anthropic.com/v1/messages'
+                trim((string) $settings->get('omekarapper_anthropic_base_url', 'https://api.anthropic.com/v1/messages')) ?: 'https://api.anthropic.com/v1/messages',
+                $requestTimeout
             );
         }
 
@@ -67,10 +72,23 @@ class AiClientManagerFactory implements FactoryInterface
                 trim((string) $settings->get('omekarapper_local_base_url', 'http://localhost:11434/v1/chat/completions')) ?: 'http://localhost:11434/v1/chat/completions',
                 trim((string) $settings->get('omekarapper_local_api_key', 'ollama')),
                 'chat',
-                false
+                false,
+                $requestTimeout
             );
         }
 
         return new AiClientManager($providers);
+    }
+
+    private function clampTimeout(int $configuredTimeout): int
+    {
+        $configuredTimeout = max(1, $configuredTimeout);
+        $phpLimit = (int) ini_get('max_execution_time');
+        if ($phpLimit <= 0) {
+            return $configuredTimeout;
+        }
+
+        $safeMaximum = max(1, $phpLimit - 5);
+        return min($configuredTimeout, $safeMaximum);
     }
 }

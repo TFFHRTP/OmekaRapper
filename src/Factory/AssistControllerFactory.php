@@ -8,6 +8,7 @@ use OmekaRapper\Controller\AssistController;
 use OmekaRapper\Service\AiClientManager;
 use OmekaRapper\Service\PdfTextExtractor;
 use OmekaRapper\Service\ProviderModelCatalog;
+use OmekaRapper\Service\SuggestionEnricher;
 
 class AssistControllerFactory implements FactoryInterface
 {
@@ -16,7 +17,8 @@ class AssistControllerFactory implements FactoryInterface
         return new AssistController(
             $container->get(AiClientManager::class),
             $container->get(ProviderModelCatalog::class),
-            $container->get(PdfTextExtractor::class)
+            $container->get(PdfTextExtractor::class),
+            $container->get(SuggestionEnricher::class)
         );
     }
 }

@@ -7,17 +7,20 @@ use Laminas\View\Model\JsonModel;
 use OmekaRapper\Service\AiClientManager;
 use OmekaRapper\Service\PdfTextExtractor;
 use OmekaRapper\Service\ProviderModelCatalog;
+use OmekaRapper\Service\SuggestionEnricher;
 use RuntimeException;
 
 class AssistController extends AbstractActionController
 {
     private const MAX_TEXT_LENGTH = 200000;
     private const MAX_PDF_BYTES = 26214400;
+    private const PROVIDER_TEXT_LIMIT = 12000;
 
     public function __construct(
         private AiClientManager $clients,
         private ProviderModelCatalog $modelCatalog,
-        private PdfTextExtractor $pdfTextExtractor
+        private PdfTextExtractor $pdfTextExtractor,
+        private SuggestionEnricher $suggestionEnricher
     ) {}
 
     public function indexAction(): JsonModel
@@ -77,6 +80,7 @@ class AssistController extends AbstractActionController
 
         $provider = (string) $this->params()->fromPost('provider', 'dummy');
         $text = trim((string) $this->params()->fromPost('text', ''));
+        $availableTerms = $this->parseAvailableTerms((string) $this->params()->fromPost('available_terms', ''));
 
         try {
             $pdfSource = $this->extractUploadedPdfText();
@@ -107,28 +111,45 @@ class AssistController extends AbstractActionController
             return $model;
         }
 
+        $providerWarning = null;
+        $providerText = $this->prepareProviderText($sourceText);
         try {
             $client = $this->clients->get($provider);
             $suggestions = $client->suggestCatalogMetadata([
-                'text' => $sourceText,
+                'text' => $providerText,
+                'available_terms' => $availableTerms,
             ]);
         } catch (RuntimeException $e) {
-            $model = new JsonModel([
-                'ok' => false,
-                'error' => $e->getMessage(),
-            ]);
-            $model->setTerminal(true);
-            return $model;
+            $providerWarning = $e->getMessage();
+            $suggestions = [];
+        }
+
+        $suggestions = $this->suggestionEnricher->enrich($suggestions, $sourceText, $availableTerms);
+        if ($providerWarning !== null) {
+            $raw = is_array($suggestions['raw'] ?? null) ? $suggestions['raw'] : [];
+            $raw['warning'] = $providerWarning;
+            $raw['fallback_used'] = true;
+            $suggestions['raw'] = $raw;
+        }
+        if ($providerText !== $sourceText) {
+            $raw = is_array($suggestions['raw'] ?? null) ? $suggestions['raw'] : [];
+            $raw['provider_input_truncated'] = true;
+            $raw['provider_input_length'] = mb_strlen($providerText);
+            $raw['source_text_length'] = mb_strlen($sourceText);
+            $suggestions['raw'] = $raw;
         }
 
         $model = new JsonModel([
             'ok' => true,
             'provider' => $provider,
             'suggestions' => $suggestions,
+            'warning' => $providerWarning,
             'source' => [
                 'has_pdf' => $pdfText !== '',
                 'ocr_used' => !empty($pdfSource['ocr_used']),
                 'text_length' => mb_strlen($sourceText),
+                'provider_text_length' => mb_strlen($providerText),
+                'provider_text_truncated' => $providerText !== $sourceText,
             ],
         ]);
         $model->setTerminal(true);
@@ -240,5 +261,63 @@ class AssistController extends AbstractActionController
         }
 
         return trim("User notes:\n{$text}\n\nPDF text:\n{$pdfText}");
+    }
+
+    private function prepareProviderText(string $text): string
+    {
+        $text = trim($text);
+        if (mb_strlen($text) <= self::PROVIDER_TEXT_LIMIT) {
+            return $text;
+        }
+
+        $lines = preg_split('/\R+/', $text) ?: [];
+        $priorityLines = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (preg_match('/^(title|author|authors|by|abstract|summary|keywords|subjects?|publisher|publication|journal|source|doi|isbn|issn|date)\b/i', $line)) {
+                $priorityLines[] = $line;
+            }
+        }
+
+        $priorityBlock = implode("\n", array_slice(array_values(array_unique($priorityLines)), 0, 20));
+        $head = mb_substr($text, 0, 7000);
+        $tail = mb_substr($text, -2500);
+
+        $prepared = trim(implode("\n\n", array_filter([
+            $priorityBlock !== '' ? "Priority metadata lines:\n" . $priorityBlock : '',
+            "Beginning of source:\n" . trim($head),
+            "End of source:\n" . trim($tail),
+        ])));
+
+        if (mb_strlen($prepared) > self::PROVIDER_TEXT_LIMIT) {
+            $prepared = mb_substr($prepared, 0, self::PROVIDER_TEXT_LIMIT);
+        }
+
+        return $prepared;
+    }
+
+    private function parseAvailableTerms(string $rawTerms): array
+    {
+        if ($rawTerms === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawTerms, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $terms = [];
+        foreach ($decoded as $term) {
+            $term = trim((string) $term);
+            if ($term !== '') {
+                $terms[] = $term;
+            }
+        }
+
+        return array_values(array_unique($terms));
     }
 }

@@ -11,7 +11,8 @@ class AnthropicProvider implements ProviderInterface
         private string $label,
         private string $apiKey,
         private string $model = 'claude-sonnet-4-0',
-        private string $endpoint = 'https://api.anthropic.com/v1/messages'
+        private string $endpoint = 'https://api.anthropic.com/v1/messages',
+        private int $timeout = 25
     ) {}
 
     public function getName(): string
@@ -40,7 +41,7 @@ class AnthropicProvider implements ProviderInterface
             'system' => $this->buildSystemPrompt(),
             'messages' => [[
                 'role' => 'user',
-                'content' => $this->buildUserPrompt($text),
+                'content' => $this->buildUserPrompt($text, $input),
             ]],
         ];
 
@@ -70,13 +71,23 @@ Rules:
 - Keep the abstract to 1-3 sentences.
 - Use short controlled labels for subjects where possible.
 - Return creators and identifiers as arrays of strings.
-- Return only valid JSON with keys: title, creators, date, publisher, publication, abstract, subjects, identifiers, language.
+- Prefer filling as many available Omeka properties as the source supports.
+- Return only valid JSON with keys: title, creators, date, publisher, publication, abstract, subjects, identifiers, language, properties.
+- The properties key should be an array of objects: { "term": "...", "values": ["..."] }.
 PROMPT;
     }
 
-    private function buildUserPrompt(string $text): string
+    private function buildUserPrompt(string $text, array $input): string
     {
-        return "Source text:\n{$text}";
+        $prompt = "Source text:\n{$text}";
+        $terms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
+        $terms = array_values(array_filter(array_map(static fn($term) => trim((string) $term), $terms)));
+        if ($terms !== []) {
+            $prompt .= "\n\nAvailable Omeka property terms for this item form:\n- "
+                . implode("\n- ", $terms)
+                . "\n\nUse the properties array to return only terms from this list when you can infer values confidently. Return as many of these terms as the source supports.";
+        }
+        return $prompt;
     }
 
     private function postJson(array $payload): string
@@ -89,7 +100,7 @@ PROMPT;
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 60,
+            CURLOPT_TIMEOUT => max(1, $this->timeout),
             CURLOPT_HTTPHEADER => [
                 'x-api-key: ' . $this->apiKey,
                 'anthropic-version: 2023-06-01',
@@ -133,16 +144,18 @@ PROMPT;
 
     private function normalizeSuggestions(array $raw, array $response): array
     {
+        $properties = $this->normalizePropertySuggestions($raw['properties'] ?? []);
         return [
-            'title' => $this->normalizeString($raw['title'] ?? ''),
+            'title' => $this->normalizeString($raw['title'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:title']),
             'creators' => $this->normalizeStringList($raw['creators'] ?? []),
-            'date' => $this->normalizeString($raw['date'] ?? ''),
-            'publisher' => $this->normalizeString($raw['publisher'] ?? ''),
-            'publication' => $this->normalizeString($raw['publication'] ?? ''),
-            'abstract' => $this->normalizeString($raw['abstract'] ?? ''),
+            'date' => $this->normalizeString($raw['date'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:date']),
+            'publisher' => $this->normalizeString($raw['publisher'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:publisher']),
+            'publication' => $this->normalizeString($raw['publication'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:isPartOf', 'bibo:Journal']),
+            'abstract' => $this->normalizeString($raw['abstract'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:abstract', 'dcterms:description']),
             'subjects' => $this->normalizeStringList($raw['subjects'] ?? []),
             'identifiers' => $this->normalizeStringList($raw['identifiers'] ?? []),
-            'language' => $this->normalizeString($raw['language'] ?? ''),
+            'language' => $this->normalizeString($raw['language'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:language']),
+            'properties' => $this->mergeDerivedProperties($properties, $raw),
             'confidence' => [],
             'raw' => [
                 'provider' => $this->name,
@@ -150,6 +163,79 @@ PROMPT;
                 'response_id' => (string) ($response['id'] ?? ''),
             ],
         ];
+    }
+
+    private function normalizePropertySuggestions(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $properties = [];
+        foreach ($value as $property) {
+            if (!is_array($property)) {
+                continue;
+            }
+
+            $term = trim((string) ($property['term'] ?? ''));
+            $values = $this->normalizeStringList($property['values'] ?? []);
+            if ($term === '' || $values === []) {
+                continue;
+            }
+
+            $properties[$term] = array_values(array_unique(array_merge($properties[$term] ?? [], $values)));
+        }
+
+        $normalized = [];
+        foreach ($properties as $term => $values) {
+            $normalized[] = ['term' => $term, 'values' => $values];
+        }
+        return $normalized;
+    }
+
+    private function firstPropertyValue(array $properties, array $terms): ?string
+    {
+        foreach ($terms as $term) {
+            foreach ($properties as $property) {
+                if (($property['term'] ?? '') === $term && !empty($property['values'][0])) {
+                    return (string) $property['values'][0];
+                }
+            }
+        }
+        return null;
+    }
+
+    private function mergeDerivedProperties(array $properties, array $raw): array
+    {
+        $map = [];
+        foreach ($properties as $property) {
+            $map[$property['term']] = $property['values'];
+        }
+
+        $derived = [
+            'dcterms:title' => $this->normalizeStringList([$raw['title'] ?? '']),
+            'dcterms:creator' => $this->normalizeStringList($raw['creators'] ?? []),
+            'dcterms:date' => $this->normalizeStringList([$raw['date'] ?? '']),
+            'dcterms:publisher' => $this->normalizeStringList([$raw['publisher'] ?? '']),
+            'dcterms:abstract' => $this->normalizeStringList([$raw['abstract'] ?? '']),
+            'dcterms:subject' => $this->normalizeStringList($raw['subjects'] ?? []),
+            'dcterms:identifier' => $this->normalizeStringList($raw['identifiers'] ?? []),
+            'dcterms:language' => $this->normalizeStringList([$raw['language'] ?? '']),
+            'dcterms:isPartOf' => $this->normalizeStringList([$raw['publication'] ?? '']),
+        ];
+
+        foreach ($derived as $term => $values) {
+            if ($values === []) {
+                continue;
+            }
+            $map[$term] = array_values(array_unique(array_merge($map[$term] ?? [], $values)));
+        }
+
+        $normalized = [];
+        foreach ($map as $term => $values) {
+            $normalized[] = ['term' => $term, 'values' => $values];
+        }
+        return $normalized;
     }
 
     private function normalizeString(mixed $value): ?string

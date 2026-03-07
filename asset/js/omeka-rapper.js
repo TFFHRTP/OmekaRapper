@@ -60,6 +60,7 @@
     const subjects = normalizeList(suggestions.subjects);
     const creators = normalizeList(suggestions.creators);
     const identifiers = normalizeList(suggestions.identifiers);
+    const propertyRows = Array.isArray(suggestions.properties) ? suggestions.properties : [];
 
     if (suggestions.title) {
       rows.push(`<div><strong>Title:</strong> ${escapeHtml(suggestions.title)}</div>`);
@@ -82,6 +83,14 @@
       rows.push(`<div style="margin-top:.35rem;"><strong>Language:</strong> ${escapeHtml(suggestions.language)}</div>`);
     }
     rows.push(renderList("Identifiers", identifiers));
+    if (propertyRows.length) {
+      const lines = propertyRows
+        .filter((property) => property && property.term && Array.isArray(property.values) && property.values.length)
+        .map((property) => `<div style="margin-top:.35rem;"><strong>${escapeHtml(property.term)}:</strong> ${escapeHtml(property.values.join(", "))}</div>`);
+      if (lines.length) {
+        rows.push(`<div style="margin-top:.75rem;"><strong>Detected properties</strong>${lines.join("")}</div>`);
+      }
+    }
 
     const visibleRows = rows.filter(Boolean);
     if (!visibleRows.length) {
@@ -220,6 +229,52 @@
     return false;
   }
 
+  function collectAvailableTerms() {
+    const terms = new Set();
+    document.querySelectorAll("#property-selector li.selector-child[data-property-term]").forEach((node) => {
+      const term = (node.getAttribute("data-property-term") || "").trim();
+      if (term) terms.add(term);
+    });
+    document.querySelectorAll("#properties .resource-property[data-property-term]").forEach((node) => {
+      const term = (node.getAttribute("data-property-term") || "").trim();
+      if (term) terms.add(term);
+    });
+    return [...terms];
+  }
+
+  function applyPropertySuggestions(panel) {
+    const suggestions = getState(panel);
+    const properties = Array.isArray(suggestions && suggestions.properties) ? suggestions.properties : [];
+    if (!properties.length) {
+      setStatus(panel, `<span style="color:#b00;">No property suggestions to apply.</span>`);
+      return;
+    }
+
+    let applied = 0;
+    let skipped = 0;
+    properties.forEach((property) => {
+      const term = property && property.term ? String(property.term).trim() : "";
+      const values = normalizeList(property && property.values ? property.values : []);
+      if (!term || !values.length) {
+        return;
+      }
+      const ok = applyListToProperty([term], values);
+      if (ok) {
+        applied += 1;
+      } else {
+        skipped += 1;
+      }
+    });
+
+    if (applied) {
+      const skippedText = skipped ? ` ${skipped} properties could not be applied.` : "";
+      setStatus(panel, `<span style="color:#067d17;">Applied ${escapeHtml(String(applied))} metadata properties.${escapeHtml(skippedText)}</span>`);
+      return;
+    }
+
+    setStatus(panel, `<span style="color:#b00;">Could not apply any suggested properties to the current item form.</span>`);
+  }
+
   function applySuggestion(panel, key, terms) {
     const suggestions = getState(panel);
     const value = suggestions && suggestions[key] ? suggestions[key] : "";
@@ -267,6 +322,7 @@
     const body = new FormData();
     body.append("text", text);
     body.append("provider", provider);
+    body.append("available_terms", JSON.stringify(collectAvailableTerms()));
     if (pdfFile) {
       body.append("pdf", pdfFile);
       setPdfStatus(panel, `Uploading ${pdfFile.name}...`, "#666");
@@ -282,7 +338,16 @@
       });
 
       const raw = await resp.text();
-      const json = JSON.parse(raw);
+      if (!raw.trim()) {
+        throw new Error("The server returned an empty response. The request likely timed out or hit a PHP fatal error.");
+      }
+
+      let json;
+      try {
+        json = JSON.parse(raw);
+      } catch (error) {
+        throw new Error(raw.trim() || "The server returned invalid JSON.");
+      }
       if (!resp.ok || !json.ok) {
         setState(panel, null);
         setStatus(panel, `<span style="color:#b00;">${escapeHtml(json.error || "Error")}</span>`);
@@ -298,7 +363,10 @@
           : " Suggestions include extracted PDF text.";
         setPdfStatus(panel, `Loaded ${pdfFile ? pdfFile.name : "PDF"} successfully.`, "#067d17");
       }
-      setStatus(panel, `<span style="color:#067d17;">Suggestions generated.${escapeHtml(sourceMessage)}</span>`);
+      const warningMessage = json.warning
+        ? ` Provider warning: ${json.warning}. Heuristic fallback was used.`
+        : "";
+      setStatus(panel, `<span style="color:#067d17;">Suggestions generated.${escapeHtml(sourceMessage + warningMessage)}</span>`);
       render(results, json.suggestions);
     } catch (err) {
       setState(panel, null);
@@ -328,6 +396,13 @@
   });
 
   document.addEventListener("click", (e) => {
+    const applyAllBtn = e.target.closest(".omeka-rapper-apply-all");
+    if (applyAllBtn) {
+      const panel = applyAllBtn.closest(".omeka-rapper-panel");
+      applyPropertySuggestions(panel);
+      return;
+    }
+
     const titleBtn = e.target.closest(".omeka-rapper-apply-title");
     if (titleBtn) {
       const panel = titleBtn.closest(".omeka-rapper-panel");

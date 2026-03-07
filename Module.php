@@ -26,6 +26,7 @@ class Module extends AbstractModule
         'omekarapper_local_api_key' => 'ollama',
         'omekarapper_local_model' => 'qwen2.5:7b',
         'omekarapper_local_base_url' => 'http://localhost:11434/v1/chat/completions',
+        'omekarapper_provider_timeout' => 25,
         'omekarapper_pdftotext_path' => '',
         'omekarapper_pdftoppm_path' => '',
         'omekarapper_tesseract_path' => '',
@@ -73,6 +74,8 @@ class Module extends AbstractModule
                 'local_api_key' => (string) $settings->get('omekarapper_local_api_key', self::SETTINGS['omekarapper_local_api_key']),
                 'local_model' => (string) $settings->get('omekarapper_local_model', self::SETTINGS['omekarapper_local_model']),
                 'local_base_url' => (string) $settings->get('omekarapper_local_base_url', self::SETTINGS['omekarapper_local_base_url']),
+                'provider_timeout' => (int) $settings->get('omekarapper_provider_timeout', self::SETTINGS['omekarapper_provider_timeout']),
+                'php_max_execution_time' => (int) ini_get('max_execution_time'),
                 'pdftotext_path' => (string) $settings->get('omekarapper_pdftotext_path', self::SETTINGS['omekarapper_pdftotext_path']),
                 'pdftoppm_path' => (string) $settings->get('omekarapper_pdftoppm_path', self::SETTINGS['omekarapper_pdftoppm_path']),
                 'tesseract_path' => (string) $settings->get('omekarapper_tesseract_path', self::SETTINGS['omekarapper_tesseract_path']),
@@ -105,6 +108,9 @@ class Module extends AbstractModule
         $settings->set('omekarapper_local_api_key', trim((string) ($data['omekarapper_local_api_key'] ?? self::SETTINGS['omekarapper_local_api_key'])));
         $settings->set('omekarapper_local_model', trim((string) ($data['omekarapper_local_model'] ?? self::SETTINGS['omekarapper_local_model'])) ?: self::SETTINGS['omekarapper_local_model']);
         $settings->set('omekarapper_local_base_url', trim((string) ($data['omekarapper_local_base_url'] ?? self::SETTINGS['omekarapper_local_base_url'])) ?: self::SETTINGS['omekarapper_local_base_url']);
+        $providerTimeout = (int) ($data['omekarapper_provider_timeout'] ?? self::SETTINGS['omekarapper_provider_timeout']);
+        $providerTimeout = max(1, $providerTimeout);
+        $settings->set('omekarapper_provider_timeout', $providerTimeout);
         $settings->set('omekarapper_pdftotext_path', trim((string) ($data['omekarapper_pdftotext_path'] ?? self::SETTINGS['omekarapper_pdftotext_path'])));
         $settings->set('omekarapper_pdftoppm_path', trim((string) ($data['omekarapper_pdftoppm_path'] ?? self::SETTINGS['omekarapper_pdftoppm_path'])));
         $settings->set('omekarapper_tesseract_path', trim((string) ($data['omekarapper_tesseract_path'] ?? self::SETTINGS['omekarapper_tesseract_path'])));
