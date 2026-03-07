@@ -1,25 +1,47 @@
-<div class="sidebar">
-  <div class="section omeka-rapper-panel"
-       data-suggest-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'suggest']); ?>"
-       data-providers-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'providers']); ?>">
-    <h3>OmekaRapper</h3>
-    <p style="margin-top:0;">
-      AI cataloging assistant (starter).
-    </p>
+<div class="omeka-rapper-sidebar" style="margin-top:1rem; border:1px solid #d9d9d9; background:#f7f7f7; padding:1rem;">
+  <div class="omeka-rapper-sidebar-content">
+    <div class="sidebar-header">
+      <h3>OmekaRapper</h3>
+    </div>
 
-    <label for="omeka-rapper-text">Source text</label>
-    <textarea id="omeka-rapper-text" class="omeka-rapper-input" rows="8"
-      placeholder="Paste article text, abstract, OCR output, etc."></textarea>
+    <?php echo $this->sidebarSectionNav([
+      'sidebar-section-omeka-rapper-advanced' => $this->translate('Advanced'),
+    ], $this->translate('OmekaRapper panel sections')); ?>
 
-    <label for="omeka-rapper-provider">Provider</label>
-    <select id="omeka-rapper-provider" class="omeka-rapper-provider">
-      <option value="dummy">Dummy (test)</option>
-    </select>
+    <div id="sidebar-section-omeka-rapper-advanced" class="sidebar-section active" role="tabpanel" aria-labelledby="sidebar-section-omeka-rapper-advanced-label">
+      <div class="omeka-rapper-panel"
+           data-suggest-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'suggest']); ?>"
+           data-providers-endpoint="<?= $this->url('admin/omeka-rapper', ['action' => 'providers']); ?>">
+        <p style="margin-top:0;">
+          AI cataloging assistant (starter).
+        </p>
 
-    <button type="button" class="button omeka-rapper-generate">Suggest metadata</button>
-    <button type="button" class="button omeka-rapper-apply-title" style="margin-left:.35rem;">Apply title</button>
-    <button type="button" class="button omeka-rapper-apply-abstract" style="margin-left:.35rem;">Apply abstract</button>
+        <label for="omeka-rapper-text">Source text</label>
+        <textarea id="omeka-rapper-text" class="omeka-rapper-input" rows="18"
+          style="width:100%; min-height:22rem; resize:vertical; box-sizing:border-box;"
+          placeholder="Paste article text, abstract, OCR output, etc."></textarea>
 
-    <div class="omeka-rapper-results" style="margin-top:1rem;"></div>
+        <label for="omeka-rapper-pdf" style="display:block; margin-top:.75rem;">PDF import</label>
+        <input id="omeka-rapper-pdf" class="omeka-rapper-pdf" type="file" accept="application/pdf,.pdf">
+        <div class="omeka-rapper-pdf-status" style="margin-top:.35rem; min-height:1.1rem; font-size:.875em; color:#666;"></div>
+        <div style="margin-top:.35rem; font-size:.875em; color:#666;">
+          Select a PDF, then click Suggest metadata to upload it. Embedded text is extracted first; scanned PDFs use OCR when OCR tools are installed.
+        </div>
+
+        <label for="omeka-rapper-provider" style="display:block; margin-top:.75rem;">Provider</label>
+        <select id="omeka-rapper-provider" class="omeka-rapper-provider">
+          <option value="dummy">Dummy (test)</option>
+        </select>
+
+        <div style="display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.75rem;">
+          <button type="button" class="button omeka-rapper-generate">Suggest metadata</button>
+          <button type="button" class="button omeka-rapper-apply-title">Apply title</button>
+          <button type="button" class="button omeka-rapper-apply-abstract">Apply abstract</button>
+        </div>
+
+        <div class="omeka-rapper-status" style="margin-top:.75rem; min-height:1.25rem;"></div>
+        <div class="omeka-rapper-results" style="margin-top:1rem;"></div>
+      </div>
+    </div>
   </div>
 </div>

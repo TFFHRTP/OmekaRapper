@@ -6,11 +6,17 @@ use Interop\Container\ContainerInterface;
 use Laminas\ServiceManager\Factory\FactoryInterface;
 use OmekaRapper\Controller\AssistController;
 use OmekaRapper\Service\AiClientManager;
+use OmekaRapper\Service\PdfTextExtractor;
+use OmekaRapper\Service\ProviderModelCatalog;
 
 class AssistControllerFactory implements FactoryInterface
 {
-    public function __invoke(ContainerInterface $container, $requestedName, array $options = null): AssistController
+    public function __invoke(ContainerInterface $container, $requestedName, ?array $options = null): AssistController
     {
-        return new AssistController($container->get(AiClientManager::class));
+        return new AssistController(
+            $container->get(AiClientManager::class),
+            $container->get(ProviderModelCatalog::class),
+            $container->get(PdfTextExtractor::class)
+        );
     }
 }

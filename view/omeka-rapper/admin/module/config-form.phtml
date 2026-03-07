@@ -1,0 +1,375 @@
+<?php
+$escape = $this->plugin('escapeHtml');
+$translate = $this->plugin('translate');
+$settings = $settings ?? [];
+$modelsEndpoint = $this->url('admin/omeka-rapper', ['action' => 'models']);
+?>
+
+<fieldset>
+    <legend><?php echo $escape($translate('Provider settings')); ?></legend>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_provider_default"><?php echo $escape($translate('Default provider')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Used as the preselected provider in the item editor.')); ?></div>
+        </div>
+        <div class="inputs">
+            <select id="omekarapper_provider_default" name="omekarapper_provider_default">
+                <option value="dummy" <?php echo ($settings['provider_default'] ?? 'dummy') === 'dummy' ? 'selected' : ''; ?>>Dummy</option>
+                <option value="chatgpt" <?php echo ($settings['provider_default'] ?? 'dummy') === 'chatgpt' ? 'selected' : ''; ?>>ChatGPT</option>
+                <option value="codex" <?php echo ($settings['provider_default'] ?? 'dummy') === 'codex' ? 'selected' : ''; ?>>Codex</option>
+                <option value="claude" <?php echo ($settings['provider_default'] ?? 'dummy') === 'claude' ? 'selected' : ''; ?>>Claude</option>
+                <option value="ollama" <?php echo ($settings['provider_default'] ?? 'dummy') === 'ollama' ? 'selected' : ''; ?>>Ollama</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_openai_enabled"><?php echo $escape($translate('Enable ChatGPT provider')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Uses the OpenAI Responses API.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="hidden" name="omekarapper_openai_enabled" value="">
+            <input type="checkbox" id="omekarapper_openai_enabled" name="omekarapper_openai_enabled" value="1" <?php echo !empty($settings['openai_enabled']) ? 'checked' : ''; ?>>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_openai_api_key"><?php echo $escape($translate('OpenAI API key')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Shared by ChatGPT and Codex. Stored in Omeka settings and used server-side only.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="password" id="omekarapper_openai_api_key" name="omekarapper_openai_api_key" value="<?php echo $escape($settings['openai_api_key'] ?? ''); ?>" autocomplete="off">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_openai_model"><?php echo $escape($translate('OpenAI model')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Responses API model name.')); ?></div>
+        </div>
+        <div class="inputs">
+            <select
+                id="omekarapper_openai_model"
+                name="omekarapper_openai_model"
+                data-model-source="chatgpt"
+                data-model-endpoint="<?php echo $escape($modelsEndpoint); ?>"
+                data-api-key-input="#omekarapper_openai_api_key"
+                data-base-url-input="#omekarapper_openai_base_url">
+                <option value="<?php echo $escape($settings['openai_model'] ?? 'gpt-5-mini'); ?>" selected><?php echo $escape($settings['openai_model'] ?? 'gpt-5-mini'); ?></option>
+            </select>
+            <div class="omekarapper-model-status" data-for="#omekarapper_openai_model" style="margin-top:.35rem; font-size:.875em;"></div>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_openai_base_url"><?php echo $escape($translate('ChatGPT endpoint')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Default is the OpenAI Responses API endpoint.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_openai_base_url" name="omekarapper_openai_base_url" value="<?php echo $escape($settings['openai_base_url'] ?? 'https://api.openai.com/v1/responses'); ?>">
+            <button type="button" class="button omekarapper-refresh-models" data-target="#omekarapper_openai_model" style="margin-top:.5rem;">Refresh models</button>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_codex_enabled"><?php echo $escape($translate('Enable Codex provider')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Uses the same OpenAI API key, but exposes a separate provider choice and model setting.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="hidden" name="omekarapper_codex_enabled" value="">
+            <input type="checkbox" id="omekarapper_codex_enabled" name="omekarapper_codex_enabled" value="1" <?php echo !empty($settings['codex_enabled']) ? 'checked' : ''; ?>>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_codex_model"><?php echo $escape($translate('Codex model')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Default is codex-mini-latest.')); ?></div>
+        </div>
+        <div class="inputs">
+            <select
+                id="omekarapper_codex_model"
+                name="omekarapper_codex_model"
+                data-model-source="codex"
+                data-model-endpoint="<?php echo $escape($modelsEndpoint); ?>"
+                data-api-key-input="#omekarapper_openai_api_key"
+                data-base-url-input="#omekarapper_codex_base_url">
+                <option value="<?php echo $escape($settings['codex_model'] ?? 'codex-mini-latest'); ?>" selected><?php echo $escape($settings['codex_model'] ?? 'codex-mini-latest'); ?></option>
+            </select>
+            <div class="omekarapper-model-status" data-for="#omekarapper_codex_model" style="margin-top:.35rem; font-size:.875em;"></div>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_codex_base_url"><?php echo $escape($translate('Codex endpoint')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Default is the OpenAI Responses API endpoint.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_codex_base_url" name="omekarapper_codex_base_url" value="<?php echo $escape($settings['codex_base_url'] ?? 'https://api.openai.com/v1/responses'); ?>">
+            <button type="button" class="button omekarapper-refresh-models" data-target="#omekarapper_codex_model" style="margin-top:.5rem;">Refresh models</button>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_anthropic_enabled"><?php echo $escape($translate('Enable Claude provider')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Uses the Anthropic Messages API.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="hidden" name="omekarapper_anthropic_enabled" value="">
+            <input type="checkbox" id="omekarapper_anthropic_enabled" name="omekarapper_anthropic_enabled" value="1" <?php echo !empty($settings['anthropic_enabled']) ? 'checked' : ''; ?>>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_anthropic_api_key"><?php echo $escape($translate('Anthropic API key')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Used by the Claude provider.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="password" id="omekarapper_anthropic_api_key" name="omekarapper_anthropic_api_key" value="<?php echo $escape($settings['anthropic_api_key'] ?? ''); ?>" autocomplete="off">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_anthropic_model"><?php echo $escape($translate('Claude model')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Default is claude-sonnet-4-0.')); ?></div>
+        </div>
+        <div class="inputs">
+            <select
+                id="omekarapper_anthropic_model"
+                name="omekarapper_anthropic_model"
+                data-model-source="claude"
+                data-model-endpoint="<?php echo $escape($modelsEndpoint); ?>"
+                data-api-key-input="#omekarapper_anthropic_api_key"
+                data-base-url-input="#omekarapper_anthropic_base_url">
+                <option value="<?php echo $escape($settings['anthropic_model'] ?? 'claude-sonnet-4-0'); ?>" selected><?php echo $escape($settings['anthropic_model'] ?? 'claude-sonnet-4-0'); ?></option>
+            </select>
+            <div class="omekarapper-model-status" data-for="#omekarapper_anthropic_model" style="margin-top:.35rem; font-size:.875em;"></div>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_anthropic_base_url"><?php echo $escape($translate('Claude endpoint')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Default is the Anthropic Messages API endpoint.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_anthropic_base_url" name="omekarapper_anthropic_base_url" value="<?php echo $escape($settings['anthropic_base_url'] ?? 'https://api.anthropic.com/v1/messages'); ?>">
+            <button type="button" class="button omekarapper-refresh-models" data-target="#omekarapper_anthropic_model" style="margin-top:.5rem;">Refresh models</button>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_local_enabled"><?php echo $escape($translate('Enable Ollama provider')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Uses an OpenAI-compatible local endpoint such as Ollama.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="hidden" name="omekarapper_local_enabled" value="">
+            <input type="checkbox" id="omekarapper_local_enabled" name="omekarapper_local_enabled" value="1" <?php echo !empty($settings['local_enabled']) ? 'checked' : ''; ?>>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_local_model"><?php echo $escape($translate('Ollama model')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Use an installed model name such as qwen2.5:7b, llama3.2, mistral, gemma3, or qwen2.5.')); ?></div>
+        </div>
+        <div class="inputs">
+            <select
+                id="omekarapper_local_model"
+                name="omekarapper_local_model"
+                data-model-source="ollama"
+                data-model-endpoint="<?php echo $escape($modelsEndpoint); ?>"
+                data-api-key-input="#omekarapper_local_api_key"
+                data-base-url-input="#omekarapper_local_base_url">
+                <option value="<?php echo $escape($settings['local_model'] ?? 'qwen2.5:7b'); ?>" selected><?php echo $escape($settings['local_model'] ?? 'qwen2.5:7b'); ?></option>
+            </select>
+            <div class="omekarapper-model-status" data-for="#omekarapper_local_model" style="margin-top:.35rem; font-size:.875em;"></div>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_local_base_url"><?php echo $escape($translate('Ollama API endpoint')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('For Ollama, the default is http://localhost:11434/v1/chat/completions.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_local_base_url" name="omekarapper_local_base_url" value="<?php echo $escape($settings['local_base_url'] ?? 'http://localhost:11434/v1/chat/completions'); ?>">
+            <button type="button" class="button omekarapper-refresh-models" data-target="#omekarapper_local_model" style="margin-top:.5rem;">Refresh models</button>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_local_api_key"><?php echo $escape($translate('Ollama API key')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Optional for most local servers. For Ollama, a placeholder like "ollama" is fine.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_local_api_key" name="omekarapper_local_api_key" value="<?php echo $escape($settings['local_api_key'] ?? 'ollama'); ?>" autocomplete="off">
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_pdftotext_path"><?php echo $escape($translate('pdftotext path')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Optional. Absolute path to the pdftotext binary used for PDF text extraction. Leave blank to skip manual configuration and use the server environment.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_pdftotext_path" name="omekarapper_pdftotext_path" value="<?php echo $escape($settings['pdftotext_path'] ?? ''); ?>" placeholder="/opt/homebrew/bin/pdftotext">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_pdftoppm_path"><?php echo $escape($translate('pdftoppm path')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Optional. Absolute path to the pdftoppm binary used before OCR on scanned PDFs. Leave blank if you do not want OCR fallback or want to rely on the server environment.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_pdftoppm_path" name="omekarapper_pdftoppm_path" value="<?php echo $escape($settings['pdftoppm_path'] ?? ''); ?>" placeholder="/opt/homebrew/bin/pdftoppm">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
+            <label for="omekarapper_tesseract_path"><?php echo $escape($translate('tesseract path')); ?></label>
+            <div class="field-description"><?php echo $escape($translate('Optional. Absolute path to the tesseract binary used for OCR fallback. Leave blank if you do not want OCR fallback or want to rely on the server environment.')); ?></div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_tesseract_path" name="omekarapper_tesseract_path" value="<?php echo $escape($settings['tesseract_path'] ?? ''); ?>" placeholder="/opt/homebrew/bin/tesseract">
+        </div>
+    </div>
+</fieldset>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  function getOptionalElement(selector) {
+    if (!selector) return null;
+    try {
+      return document.querySelector(selector);
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }
+
+  function setStatus(select, message, color) {
+    const statusSelector = select.id ? `.omekarapper-model-status[data-for="#${select.id}"]` : "";
+    const status = getOptionalElement(statusSelector);
+    if (!status) return;
+    status.textContent = message || "";
+    status.style.color = color || "";
+  }
+
+  async function refreshModelSelect(select) {
+    if (!select) return;
+    const endpoint = select.getAttribute("data-model-endpoint");
+    const provider = select.getAttribute("data-model-source");
+    const apiKeyInput = getOptionalElement(select.getAttribute("data-api-key-input") || "");
+    const baseUrlInput = getOptionalElement(select.getAttribute("data-base-url-input") || "");
+    if (!endpoint || !provider || !baseUrlInput) return;
+
+    const baseUrl = (baseUrlInput.value || "").trim();
+    const apiKey = apiKeyInput ? (apiKeyInput.value || "").trim() : "";
+
+    if (!baseUrl) {
+      setStatus(select, "Enter an endpoint to load models.", "#666");
+      return;
+    }
+
+    if ((provider === "chatgpt" || provider === "codex" || provider === "claude") && !apiKey) {
+      setStatus(select, "Enter an API key to load models.", "#666");
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      setStatus(select, "Endpoint must start with http:// or https://", "#b00");
+      return;
+    }
+
+    const currentValue = select.value;
+    const body = new URLSearchParams({
+      provider,
+      base_url: baseUrl,
+      api_key: apiKey
+    });
+
+    select.disabled = true;
+    setStatus(select, "Loading models...", "#666");
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        credentials: "same-origin",
+        body
+      });
+      const raw = await response.text();
+      let json;
+      try {
+        json = JSON.parse(raw);
+      } catch (error) {
+        throw new Error(raw || `Request failed with status ${response.status}.`);
+      }
+
+      if (!response.ok) {
+        throw new Error(json.error || `Request failed with status ${response.status}.`);
+      }
+
+      if (!json.ok || !Array.isArray(json.models) || !json.models.length) {
+        throw new Error(json.error || "No models returned.");
+      }
+
+      const models = [...json.models];
+      select.innerHTML = "";
+      models.forEach((modelName) => {
+        const option = document.createElement("option");
+        option.value = modelName;
+        option.textContent = modelName;
+        if (modelName === currentValue) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+
+      if (![...select.options].some((option) => option.selected) && currentValue) {
+        const customOption = document.createElement("option");
+        customOption.value = currentValue;
+        customOption.textContent = currentValue;
+        customOption.selected = true;
+        select.appendChild(customOption);
+      }
+      setStatus(select, `Loaded ${models.length} models.`, "#067d17");
+    } catch (error) {
+      console.error(error);
+      setStatus(select, error.message || "Could not load models.", "#b00");
+    } finally {
+      select.disabled = false;
+    }
+  }
+
+  document.querySelectorAll("select[data-model-source]").forEach((select) => {
+    refreshModelSelect(select);
+  });
+
+  document.querySelectorAll(".omekarapper-refresh-models").forEach((button) => {
+    button.addEventListener("click", () => {
+      const select = getOptionalElement(button.getAttribute("data-target"));
+      refreshModelSelect(select);
+    });
+  });
+});
+</script>

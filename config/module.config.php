@@ -34,10 +34,17 @@ return [
     'service_manager' => [
         'factories' => [
             Service\AiClientManager::class => Factory\AiClientManagerFactory::class,
+            Service\PdfTextExtractor::class => Factory\PdfTextExtractorFactory::class,
+        ],
+        'invokables' => [
+            Service\ProviderModelCatalog::class => Service\ProviderModelCatalog::class,
         ],
     ],
 
     'view_manager' => [
+        'strategies' => [
+            'ViewJsonStrategy',
+        ],
         'template_path_stack' => [
             OMEKA_PATH . '/modules/OmekaRapper/view',
         ],
