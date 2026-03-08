@@ -37,6 +37,54 @@
     status.style.color = color || "#666";
   }
 
+  async function pollSuggestionJob(panel, jobId) {
+    const endpoint = panel.getAttribute("data-status-endpoint");
+    const results = panel.querySelector(".omeka-rapper-results");
+    const pdfStatus = getPdfStatus(panel);
+    if (!endpoint || !jobId) {
+      throw new Error("Missing job status endpoint.");
+    }
+
+    const started = Date.now();
+    while ((Date.now() - started) < 10 * 60 * 1000) {
+      const response = await fetch(`${endpoint}?job_id=${encodeURIComponent(jobId)}`, {
+        credentials: "same-origin"
+      });
+      const raw = await response.text();
+      if (!raw.trim()) {
+        throw new Error("Job status request returned an empty response.");
+      }
+
+      const json = JSON.parse(raw);
+      if (!response.ok || !json.ok) {
+        throw new Error(json.error || "Could not load job status.");
+      }
+
+      if (json.status === "completed" && json.suggestions) {
+        setState(panel, json.suggestions || null);
+        if (json.source && json.source.has_pdf && pdfStatus) {
+          setPdfStatus(panel, "PDF processing completed.", "#067d17");
+        }
+        const warningMessage = json.warning
+          ? ` Provider warning: ${json.warning}. Heuristic fallback was used.`
+          : "";
+        setStatus(panel, `<span style="color:#067d17;">Suggestions generated asynchronously.${escapeHtml(warningMessage)}</span>`);
+        render(results, json.suggestions);
+        return;
+      }
+
+      if (json.status === "error" || json.status === "stopped") {
+        throw new Error(json.error || "The suggestion job failed.");
+      }
+
+      setStatus(panel, `<span style="color:#666;">Suggestion job ${escapeHtml(json.status || "running")}...</span>`);
+      results.innerHTML = "<em>Processing in background…</em>";
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+
+    throw new Error("Suggestion job timed out while polling.");
+  }
+
   function normalizeList(value) {
     if (!Array.isArray(value)) return [];
     return value
@@ -65,10 +113,14 @@
     if (suggestions.title) {
       rows.push(`<div><strong>Title:</strong> ${escapeHtml(suggestions.title)}</div>`);
     }
+    if (suggestions.alternative_title) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Alternative title:</strong> ${escapeHtml(suggestions.alternative_title)}</div>`);
+    }
     if (suggestions.abstract) {
       rows.push(`<div style="margin-top:.5rem;"><strong>Abstract:</strong><div>${escapeHtml(suggestions.abstract)}</div></div>`);
     }
     rows.push(renderList("Creators", creators));
+    rows.push(renderList("Contributors", normalizeList(suggestions.contributors)));
     rows.push(renderList("Subjects", subjects));
     if (suggestions.date) {
       rows.push(`<div style="margin-top:.35rem;"><strong>Date:</strong> ${escapeHtml(suggestions.date)}</div>`);
@@ -81,6 +133,30 @@
     }
     if (suggestions.language) {
       rows.push(`<div style="margin-top:.35rem;"><strong>Language:</strong> ${escapeHtml(suggestions.language)}</div>`);
+    }
+    if (suggestions.type) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Type:</strong> ${escapeHtml(suggestions.type)}</div>`);
+    }
+    if (suggestions.extent) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Extent:</strong> ${escapeHtml(suggestions.extent)}</div>`);
+    }
+    if (suggestions.rights) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Rights:</strong> ${escapeHtml(suggestions.rights)}</div>`);
+    }
+    if (suggestions.spatial) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Spatial:</strong> ${escapeHtml(suggestions.spatial)}</div>`);
+    }
+    if (suggestions.temporal) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Temporal:</strong> ${escapeHtml(suggestions.temporal)}</div>`);
+    }
+    if (suggestions.relation) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Relation:</strong> ${escapeHtml(suggestions.relation)}</div>`);
+    }
+    if (suggestions.source) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Source:</strong> ${escapeHtml(suggestions.source)}</div>`);
+    }
+    if (suggestions.format) {
+      rows.push(`<div style="margin-top:.35rem;"><strong>Format:</strong> ${escapeHtml(suggestions.format)}</div>`);
     }
     rows.push(renderList("Identifiers", identifiers));
     if (propertyRows.length) {
@@ -242,6 +318,33 @@
     return [...terms];
   }
 
+  function collectAvailableProperties() {
+    const properties = new Map();
+
+    document.querySelectorAll("#property-selector li.selector-child[data-property-term]").forEach((node) => {
+      const term = (node.getAttribute("data-property-term") || "").trim();
+      if (!term) return;
+      const labelNode = node.querySelector(".selector-title, .property-label, .selector-item") || node;
+      const label = (labelNode.textContent || "").replace(/\s+/g, " ").trim();
+      if (!properties.has(term)) {
+        properties.set(term, { term, label, description: "" });
+      }
+    });
+
+    document.querySelectorAll("#properties .resource-property[data-property-term]").forEach((node) => {
+      const term = (node.getAttribute("data-property-term") || "").trim();
+      if (!term) return;
+      const labelNode = node.querySelector(".field-meta h4, .field-meta label");
+      const descriptionNode = node.querySelector(".field-description");
+      const existing = properties.get(term) || { term, label: "", description: "" };
+      const label = labelNode ? (labelNode.textContent || "").replace(/\s+/g, " ").trim() : existing.label;
+      const description = descriptionNode ? (descriptionNode.textContent || "").replace(/\s+/g, " ").trim() : existing.description;
+      properties.set(term, { term, label, description });
+    });
+
+    return [...properties.values()];
+  }
+
   function applyPropertySuggestions(panel) {
     const suggestions = getState(panel);
     const properties = Array.isArray(suggestions && suggestions.properties) ? suggestions.properties : [];
@@ -320,9 +423,11 @@
     results.innerHTML = "<em>Thinking…</em>";
 
     const body = new FormData();
+    const availableProperties = collectAvailableProperties();
     body.append("text", text);
     body.append("provider", provider);
     body.append("available_terms", JSON.stringify(collectAvailableTerms()));
+    body.append("available_properties", JSON.stringify(availableProperties));
     if (pdfFile) {
       body.append("pdf", pdfFile);
       setPdfStatus(panel, `Uploading ${pdfFile.name}...`, "#666");
@@ -352,6 +457,14 @@
         setState(panel, null);
         setStatus(panel, `<span style="color:#b00;">${escapeHtml(json.error || "Error")}</span>`);
         results.innerHTML = `<span style="color:#b00;">${escapeHtml(json.error || "Error")}</span>`;
+        return;
+      }
+
+      if (json.queued && json.job_id) {
+        setState(panel, null);
+        setStatus(panel, `<span style="color:#666;">Suggestion job queued.</span>`);
+        results.innerHTML = "<em>Processing in background…</em>";
+        await pollSuggestionJob(panel, json.job_id);
         return;
       }
 

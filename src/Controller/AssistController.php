@@ -8,19 +8,23 @@ use OmekaRapper\Service\AiClientManager;
 use OmekaRapper\Service\PdfTextExtractor;
 use OmekaRapper\Service\ProviderModelCatalog;
 use OmekaRapper\Service\SuggestionEnricher;
+use OmekaRapper\Service\SuggestionPipeline;
+use OmekaRapper\Service\SuggestionResultStore;
 use RuntimeException;
+use Throwable;
 
 class AssistController extends AbstractActionController
 {
     private const MAX_TEXT_LENGTH = 200000;
     private const MAX_PDF_BYTES = 26214400;
-    private const PROVIDER_TEXT_LIMIT = 12000;
 
     public function __construct(
         private AiClientManager $clients,
         private ProviderModelCatalog $modelCatalog,
         private PdfTextExtractor $pdfTextExtractor,
-        private SuggestionEnricher $suggestionEnricher
+        private SuggestionEnricher $suggestionEnricher,
+        private SuggestionPipeline $suggestionPipeline,
+        private SuggestionResultStore $suggestionResultStore
     ) {}
 
     public function indexAction(): JsonModel
@@ -80,7 +84,15 @@ class AssistController extends AbstractActionController
 
         $provider = (string) $this->params()->fromPost('provider', 'dummy');
         $text = trim((string) $this->params()->fromPost('text', ''));
+        $availableProperties = $this->parseAvailableProperties((string) $this->params()->fromPost('available_properties', ''));
         $availableTerms = $this->parseAvailableTerms((string) $this->params()->fromPost('available_terms', ''));
+        if ($availableTerms === [] && $availableProperties !== []) {
+            $availableTerms = array_values(array_unique(array_map(
+                static fn(array $property): string => (string) ($property['term'] ?? ''),
+                $availableProperties
+            )));
+            $availableTerms = array_values(array_filter($availableTerms));
+        }
 
         try {
             $pdfSource = $this->extractUploadedPdfText();
@@ -111,47 +123,93 @@ class AssistController extends AbstractActionController
             return $model;
         }
 
-        $providerWarning = null;
-        $providerText = $this->prepareProviderText($sourceText);
-        try {
-            $client = $this->clients->get($provider);
-            $suggestions = $client->suggestCatalogMetadata([
-                'text' => $providerText,
-                'available_terms' => $availableTerms,
-            ]);
-        } catch (RuntimeException $e) {
-            $providerWarning = $e->getMessage();
-            $suggestions = [];
+        if ($this->suggestionPipeline->shouldQueue($sourceText, $pdfText !== '')) {
+            try {
+                $job = $this->jobDispatcher()->dispatch(\OmekaRapper\Job\GenerateSuggestions::class, [
+                    'provider' => $provider,
+                    'source_text' => $sourceText,
+                    'available_terms' => $availableTerms,
+                    'available_properties' => $availableProperties,
+                    'source' => [
+                        'has_pdf' => $pdfText !== '',
+                        'ocr_used' => !empty($pdfSource['ocr_used']),
+                    ],
+                ]);
+
+                $model = new JsonModel([
+                    'ok' => true,
+                    'queued' => true,
+                    'job_id' => $job ? $job->getId() : null,
+                    'status' => $job ? $job->getStatus() : 'starting',
+                    'provider' => $provider,
+                ]);
+                $model->setTerminal(true);
+                return $model;
+            } catch (Throwable $e) {
+                $queueWarning = 'Background job dispatch failed. Falling back to inline processing.';
+            }
         }
 
-        $suggestions = $this->suggestionEnricher->enrich($suggestions, $sourceText, $availableTerms);
-        if ($providerWarning !== null) {
-            $raw = is_array($suggestions['raw'] ?? null) ? $suggestions['raw'] : [];
-            $raw['warning'] = $providerWarning;
-            $raw['fallback_used'] = true;
-            $suggestions['raw'] = $raw;
-        }
-        if ($providerText !== $sourceText) {
-            $raw = is_array($suggestions['raw'] ?? null) ? $suggestions['raw'] : [];
-            $raw['provider_input_truncated'] = true;
-            $raw['provider_input_length'] = mb_strlen($providerText);
-            $raw['source_text_length'] = mb_strlen($sourceText);
-            $suggestions['raw'] = $raw;
+        $result = $this->suggestionPipeline->generate($provider, $sourceText, $availableTerms, $availableProperties);
+        $warning = $result['warning'];
+        if (!empty($queueWarning ?? null)) {
+            $warning = $warning ? $queueWarning . ' ' . $warning : $queueWarning;
         }
 
         $model = new JsonModel([
             'ok' => true,
             'provider' => $provider,
-            'suggestions' => $suggestions,
-            'warning' => $providerWarning,
+            'suggestions' => $result['suggestions'],
+            'warning' => $warning,
             'source' => [
                 'has_pdf' => $pdfText !== '',
                 'ocr_used' => !empty($pdfSource['ocr_used']),
                 'text_length' => mb_strlen($sourceText),
-                'provider_text_length' => mb_strlen($providerText),
-                'provider_text_truncated' => $providerText !== $sourceText,
+                'provider_text_length' => $result['provider_text_length'],
+                'provider_text_truncated' => $result['provider_text_truncated'],
             ],
         ]);
+        $model->setTerminal(true);
+        return $model;
+    }
+
+    public function statusAction(): JsonModel
+    {
+        if (!$this->userIsAllowed('Omeka\Entity\Item', 'create')
+            && !$this->userIsAllowed('Omeka\Entity\Item', 'update')
+        ) {
+            $this->getResponse()->setStatusCode(403);
+            $model = new JsonModel(['ok' => false, 'error' => 'You are not allowed to use the AI assistant.']);
+            $model->setTerminal(true);
+            return $model;
+        }
+
+        $jobId = (int) $this->params()->fromQuery('job_id', 0);
+        if ($jobId < 1) {
+            $this->getResponse()->setStatusCode(400);
+            $model = new JsonModel(['ok' => false, 'error' => 'job_id is required.']);
+            $model->setTerminal(true);
+            return $model;
+        }
+
+        $job = $this->api()->read('jobs', $jobId)->getContent();
+        $status = (string) $job->status();
+        $payload = [
+            'ok' => true,
+            'job_id' => $jobId,
+            'status' => $status,
+        ];
+
+        if ($status === 'completed') {
+            $result = $this->suggestionResultStore->load($jobId);
+            if ($result) {
+                $payload = array_merge($payload, $result);
+            }
+        } elseif ($status === 'error' || $status === 'stopped') {
+            $payload['error'] = trim((string) $job->log()) ?: 'The suggestion job failed.';
+        }
+
+        $model = new JsonModel($payload);
         $model->setTerminal(true);
         return $model;
     }
@@ -263,42 +321,6 @@ class AssistController extends AbstractActionController
         return trim("User notes:\n{$text}\n\nPDF text:\n{$pdfText}");
     }
 
-    private function prepareProviderText(string $text): string
-    {
-        $text = trim($text);
-        if (mb_strlen($text) <= self::PROVIDER_TEXT_LIMIT) {
-            return $text;
-        }
-
-        $lines = preg_split('/\R+/', $text) ?: [];
-        $priorityLines = [];
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-            if (preg_match('/^(title|author|authors|by|abstract|summary|keywords|subjects?|publisher|publication|journal|source|doi|isbn|issn|date)\b/i', $line)) {
-                $priorityLines[] = $line;
-            }
-        }
-
-        $priorityBlock = implode("\n", array_slice(array_values(array_unique($priorityLines)), 0, 20));
-        $head = mb_substr($text, 0, 7000);
-        $tail = mb_substr($text, -2500);
-
-        $prepared = trim(implode("\n\n", array_filter([
-            $priorityBlock !== '' ? "Priority metadata lines:\n" . $priorityBlock : '',
-            "Beginning of source:\n" . trim($head),
-            "End of source:\n" . trim($tail),
-        ])));
-
-        if (mb_strlen($prepared) > self::PROVIDER_TEXT_LIMIT) {
-            $prepared = mb_substr($prepared, 0, self::PROVIDER_TEXT_LIMIT);
-        }
-
-        return $prepared;
-    }
-
     private function parseAvailableTerms(string $rawTerms): array
     {
         if ($rawTerms === '') {
@@ -319,5 +341,39 @@ class AssistController extends AbstractActionController
         }
 
         return array_values(array_unique($terms));
+    }
+
+    private function parseAvailableProperties(string $rawProperties): array
+    {
+        if ($rawProperties === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawProperties, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $properties = [];
+        foreach ($decoded as $property) {
+            if (!is_array($property)) {
+                continue;
+            }
+
+            $term = trim((string) ($property['term'] ?? ''));
+            $label = trim((string) ($property['label'] ?? ''));
+            $description = trim((string) ($property['description'] ?? ''));
+            if ($term === '') {
+                continue;
+            }
+
+            $properties[] = [
+                'term' => $term,
+                'label' => $label,
+                'description' => $description,
+            ];
+        }
+
+        return $properties;
     }
 }

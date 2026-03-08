@@ -2,6 +2,7 @@
 
 namespace OmekaRapper\Service\Provider;
 
+use OmekaRapper\Service\MetadataFieldMapper;
 use RuntimeException;
 
 class OpenAiProvider implements ProviderInterface
@@ -58,7 +59,7 @@ class OpenAiProvider implements ProviderInterface
             throw new RuntimeException(sprintf('%s did not return valid metadata JSON.', $this->label));
         }
 
-        return $this->normalizeSuggestions($rawSuggestions, $decoded);
+        return $this->normalizeSuggestions($rawSuggestions, $decoded, $input);
     }
 
     private function buildSystemPrompt(): string
@@ -71,9 +72,12 @@ Rules:
 - If a field is unknown, use an empty string or empty array.
 - Keep the abstract to 1-3 sentences.
 - Use short controlled labels for subjects where possible.
-- Return creators and identifiers as arrays of strings.
+- Return creators, contributors, subjects, and identifiers as arrays of strings.
 - Prefer filling as many available Omeka properties as the source supports.
 - Use the properties array to return term-keyed values for the current item form.
+- Use field labels and descriptions to choose the best matching Omeka property term.
+- Prefer precise term matches over generic fallback fields when the form exposes them.
+- Include as many of these fields as can be inferred: title, alternative_title, creators, contributors, date, publisher, publication, abstract, subjects, identifiers, language, type, extent, rights, spatial, temporal, relation, source, format, properties.
 - Return only valid JSON.
 PROMPT;
     }
@@ -85,7 +89,7 @@ PROMPT;
 
     private function buildResponsesPayload(string $text, array $input, array $options): array
     {
-        $userPrompt = $this->buildUserPrompt($text) . $this->buildAvailableTermsPrompt($input);
+        $userPrompt = $this->buildUserPrompt($text) . $this->buildAvailablePropertiesPrompt($input);
         return [
             'model' => $options['model'] ?? $this->model,
             'input' => [[
@@ -115,8 +119,8 @@ PROMPT;
     private function buildChatPayload(string $text, array $input, array $options): array
     {
         $userPrompt = $this->buildUserPrompt($text)
-            . $this->buildAvailableTermsPrompt($input)
-            . "\n\nReturn a single JSON object with keys: title, creators, date, publisher, publication, abstract, subjects, identifiers, language, properties.";
+            . $this->buildAvailablePropertiesPrompt($input)
+            . "\n\nReturn a single JSON object with keys: title, alternative_title, creators, contributors, date, publisher, publication, abstract, subjects, identifiers, language, type, extent, rights, spatial, temporal, relation, source, format, properties.";
         return [
             'model' => $options['model'] ?? $this->model,
             'messages' => [
@@ -142,7 +146,9 @@ PROMPT;
             'additionalProperties' => false,
             'required' => [
                 'title',
+                'alternative_title',
                 'creators',
+                'contributors',
                 'date',
                 'publisher',
                 'publication',
@@ -150,10 +156,24 @@ PROMPT;
                 'subjects',
                 'identifiers',
                 'language',
+                'type',
+                'extent',
+                'rights',
+                'spatial',
+                'temporal',
+                'relation',
+                'source',
+                'format',
+                'properties',
             ],
             'properties' => [
                 'title' => ['type' => 'string'],
+                'alternative_title' => ['type' => 'string'],
                 'creators' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'contributors' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
                 ],
@@ -170,6 +190,14 @@ PROMPT;
                     'items' => ['type' => 'string'],
                 ],
                 'language' => ['type' => 'string'],
+                'type' => ['type' => 'string'],
+                'extent' => ['type' => 'string'],
+                'rights' => ['type' => 'string'],
+                'spatial' => ['type' => 'string'],
+                'temporal' => ['type' => 'string'],
+                'relation' => ['type' => 'string'],
+                'source' => ['type' => 'string'],
+                'format' => ['type' => 'string'],
                 'properties' => [
                     'type' => 'array',
                     'items' => [
@@ -270,13 +298,17 @@ PROMPT;
         throw new RuntimeException(sprintf('%s returned no usable chat completion text.', $this->label));
     }
 
-    private function normalizeSuggestions(array $raw, array $response): array
+    private function normalizeSuggestions(array $raw, array $response, array $input): array
     {
         $properties = $this->normalizePropertySuggestions($raw['properties'] ?? []);
+        $availableTerms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
+        $availableProperties = is_array($input['available_properties'] ?? null) ? $input['available_properties'] : [];
 
         return [
             'title' => $this->normalizeString($raw['title'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:title']),
+            'alternative_title' => $this->normalizeString($raw['alternative_title'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:alternative']),
             'creators' => $this->normalizeStringList($raw['creators'] ?? []),
+            'contributors' => $this->normalizeStringList($raw['contributors'] ?? []),
             'date' => $this->normalizeString($raw['date'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:date']),
             'publisher' => $this->normalizeString($raw['publisher'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:publisher']),
             'publication' => $this->normalizeString($raw['publication'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:isPartOf', 'bibo:Journal']),
@@ -284,7 +316,15 @@ PROMPT;
             'subjects' => $this->normalizeStringList($raw['subjects'] ?? []),
             'identifiers' => $this->normalizeStringList($raw['identifiers'] ?? []),
             'language' => $this->normalizeString($raw['language'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:language']),
-            'properties' => $this->mergeDerivedProperties($properties, $raw),
+            'type' => $this->normalizeString($raw['type'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:type']),
+            'extent' => $this->normalizeString($raw['extent'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:extent']),
+            'rights' => $this->normalizeString($raw['rights'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:rights']),
+            'spatial' => $this->normalizeString($raw['spatial'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:spatial']),
+            'temporal' => $this->normalizeString($raw['temporal'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:temporal']),
+            'relation' => $this->normalizeString($raw['relation'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:relation']),
+            'source' => $this->normalizeString($raw['source'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:source']),
+            'format' => $this->normalizeString($raw['format'] ?? '') ?? $this->firstPropertyValue($properties, ['dcterms:format']),
+            'properties' => $this->mergeDerivedProperties($properties, $raw, $availableTerms, $availableProperties),
             'confidence' => [],
             'raw' => [
                 'provider' => $this->name,
@@ -295,17 +335,43 @@ PROMPT;
         ];
     }
 
-    private function buildAvailableTermsPrompt(array $input): string
+    private function buildAvailablePropertiesPrompt(array $input): string
     {
-        $terms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
-        $terms = array_values(array_filter(array_map(static fn($term) => trim((string) $term), $terms)));
-        if ($terms === []) {
+        $properties = is_array($input['available_properties'] ?? null) ? $input['available_properties'] : [];
+        if ($properties === []) {
+            $terms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
+            $terms = array_values(array_filter(array_map(static fn($term) => trim((string) $term), $terms)));
+            if ($terms === []) {
+                return '';
+            }
+
+            return "\n\nAvailable Omeka property terms for this item form:\n- "
+                . implode("\n- ", $terms)
+                . "\n\nUse the properties array to return only terms from this list when you can infer values confidently. Prefer Dublin Core and base resource fields when applicable. Return as many of these terms as the source supports.";
+        }
+
+        $lines = [];
+        foreach ($properties as $property) {
+            if (!is_array($property) || empty($property['term'])) {
+                continue;
+            }
+            $line = '- ' . trim((string) $property['term']);
+            if (!empty($property['label'])) {
+                $line .= ' | label: ' . trim((string) $property['label']);
+            }
+            if (!empty($property['description'])) {
+                $line .= ' | description: ' . trim((string) $property['description']);
+            }
+            $lines[] = $line;
+        }
+
+        if ($lines === []) {
             return '';
         }
 
-        return "\n\nAvailable Omeka property terms for this item form:\n- "
-            . implode("\n- ", $terms)
-            . "\n\nUse the properties array to return only terms from this list when you can infer values confidently. Prefer Dublin Core and base resource fields when applicable. Return as many of these terms as the source supports.";
+        return "\n\nAvailable Omeka properties for this item form:\n"
+            . implode("\n", $lines)
+            . "\n\nUse the properties array to return only terms from this list when you can infer values confidently. Use labels and descriptions to choose the most specific matching term. Return as many of these terms as the source supports.";
     }
 
     private function normalizePropertySuggestions(mixed $value): array
@@ -353,27 +419,39 @@ PROMPT;
         return null;
     }
 
-    private function mergeDerivedProperties(array $properties, array $raw): array
+    private function mergeDerivedProperties(array $properties, array $raw, array $availableTerms, array $availableProperties): array
     {
         $map = [];
         foreach ($properties as $property) {
             $map[$property['term']] = $property['values'];
         }
 
-        $derived = [
-            'dcterms:title' => $this->normalizeStringList([$raw['title'] ?? '']),
-            'dcterms:creator' => $this->normalizeStringList($raw['creators'] ?? []),
-            'dcterms:date' => $this->normalizeStringList([$raw['date'] ?? '']),
-            'dcterms:publisher' => $this->normalizeStringList([$raw['publisher'] ?? '']),
-            'dcterms:abstract' => $this->normalizeStringList([$raw['abstract'] ?? '']),
-            'dcterms:subject' => $this->normalizeStringList($raw['subjects'] ?? []),
-            'dcterms:identifier' => $this->normalizeStringList($raw['identifiers'] ?? []),
-            'dcterms:language' => $this->normalizeStringList([$raw['language'] ?? '']),
-            'dcterms:isPartOf' => $this->normalizeStringList([$raw['publication'] ?? '']),
-        ];
+        $derived = MetadataFieldMapper::buildPropertySuggestions([
+            'title' => $raw['title'] ?? '',
+            'alternative_title' => $raw['alternative_title'] ?? '',
+            'creators' => $raw['creators'] ?? [],
+            'contributors' => $raw['contributors'] ?? [],
+            'date' => $raw['date'] ?? '',
+            'publisher' => $raw['publisher'] ?? '',
+            'publication' => $raw['publication'] ?? '',
+            'abstract' => $raw['abstract'] ?? '',
+            'subjects' => $raw['subjects'] ?? [],
+            'identifiers' => $raw['identifiers'] ?? [],
+            'language' => $raw['language'] ?? '',
+            'type' => $raw['type'] ?? '',
+            'extent' => $raw['extent'] ?? '',
+            'rights' => $raw['rights'] ?? '',
+            'spatial' => $raw['spatial'] ?? '',
+            'temporal' => $raw['temporal'] ?? '',
+            'relation' => $raw['relation'] ?? '',
+            'source' => $raw['source'] ?? '',
+            'format' => $raw['format'] ?? '',
+        ], $availableTerms, $availableProperties);
 
-        foreach ($derived as $term => $values) {
-            if ($values === []) {
+        foreach ($derived as $property) {
+            $term = trim((string) ($property['term'] ?? ''));
+            $values = $this->normalizeStringList($property['values'] ?? []);
+            if ($term === '' || $values === []) {
                 continue;
             }
             $map[$term] = array_values(array_unique(array_merge($map[$term] ?? [], $values)));
