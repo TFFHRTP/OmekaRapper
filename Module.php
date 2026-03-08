@@ -27,6 +27,7 @@ class Module extends AbstractModule
         'omekarapper_local_model' => 'qwen2.5:7b',
         'omekarapper_local_base_url' => 'http://localhost:11434/v1/chat/completions',
         'omekarapper_provider_timeout' => 25,
+        'omekarapper_phpcli_path' => '',
         'omekarapper_pdftotext_path' => '',
         'omekarapper_pdftoppm_path' => '',
         'omekarapper_tesseract_path' => '',
@@ -56,6 +57,10 @@ class Module extends AbstractModule
     public function getConfigForm(PhpRenderer $renderer)
     {
         $settings = $this->getServiceLocator()->get('Omeka\Settings');
+        $config = $this->getServiceLocator()->get('Config');
+        $configuredPhpCliPath = (string) $settings->get('omekarapper_phpcli_path', self::SETTINGS['omekarapper_phpcli_path']);
+        $globalPhpCliPath = (string) ($config['cli']['phpcli_path'] ?? '');
+        $effectivePhpCliPath = trim($configuredPhpCliPath) !== '' ? trim($configuredPhpCliPath) : trim($globalPhpCliPath);
         return $renderer->partial('omeka-rapper/admin/module/config-form', [
             'settings' => [
                 'provider_default' => (string) $settings->get('omekarapper_provider_default', self::SETTINGS['omekarapper_provider_default']),
@@ -76,6 +81,9 @@ class Module extends AbstractModule
                 'local_base_url' => (string) $settings->get('omekarapper_local_base_url', self::SETTINGS['omekarapper_local_base_url']),
                 'provider_timeout' => (int) $settings->get('omekarapper_provider_timeout', self::SETTINGS['omekarapper_provider_timeout']),
                 'php_max_execution_time' => (int) ini_get('max_execution_time'),
+                'phpcli_path' => $configuredPhpCliPath,
+                'effective_phpcli_path' => $effectivePhpCliPath,
+                'phpcli_path_valid' => $effectivePhpCliPath !== '' && is_file($effectivePhpCliPath) && is_executable($effectivePhpCliPath),
                 'pdftotext_path' => (string) $settings->get('omekarapper_pdftotext_path', self::SETTINGS['omekarapper_pdftotext_path']),
                 'pdftoppm_path' => (string) $settings->get('omekarapper_pdftoppm_path', self::SETTINGS['omekarapper_pdftoppm_path']),
                 'tesseract_path' => (string) $settings->get('omekarapper_tesseract_path', self::SETTINGS['omekarapper_tesseract_path']),
@@ -111,6 +119,7 @@ class Module extends AbstractModule
         $providerTimeout = (int) ($data['omekarapper_provider_timeout'] ?? self::SETTINGS['omekarapper_provider_timeout']);
         $providerTimeout = max(1, $providerTimeout);
         $settings->set('omekarapper_provider_timeout', $providerTimeout);
+        $settings->set('omekarapper_phpcli_path', trim((string) ($data['omekarapper_phpcli_path'] ?? self::SETTINGS['omekarapper_phpcli_path'])));
         $settings->set('omekarapper_pdftotext_path', trim((string) ($data['omekarapper_pdftotext_path'] ?? self::SETTINGS['omekarapper_pdftotext_path'])));
         $settings->set('omekarapper_pdftoppm_path', trim((string) ($data['omekarapper_pdftoppm_path'] ?? self::SETTINGS['omekarapper_pdftoppm_path'])));
         $settings->set('omekarapper_tesseract_path', trim((string) ($data['omekarapper_tesseract_path'] ?? self::SETTINGS['omekarapper_tesseract_path'])));

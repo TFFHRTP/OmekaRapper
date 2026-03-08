@@ -2,6 +2,8 @@
 
 namespace OmekaRapper\Service\Provider;
 
+use OmekaRapper\Service\MetadataFieldMapper;
+
 class DummyProvider implements ProviderInterface
 {
     public function getName(): string
@@ -13,25 +15,21 @@ class DummyProvider implements ProviderInterface
     {
         $text = (string) ($input['text'] ?? '');
         $snippet = mb_substr(trim($text), 0, 160);
-        $properties = [];
         $availableTerms = is_array($input['available_terms'] ?? null) ? $input['available_terms'] : [];
-        $availableSet = array_fill_keys($availableTerms, true);
+        $availableProperties = is_array($input['available_properties'] ?? null) ? $input['available_properties'] : [];
 
         $title = $this->guessTitle($text) ?? '(Untitled)';
-        if (isset($availableSet['dcterms:title'])) {
-            $properties[] = ['term' => 'dcterms:title', 'values' => [$title]];
-        }
-        if ($snippet !== '' && (isset($availableSet['dcterms:abstract']) || isset($availableSet['dcterms:description']))) {
-            $properties[] = [
-                'term' => isset($availableSet['dcterms:abstract']) ? 'dcterms:abstract' : 'dcterms:description',
-                'values' => [$snippet],
-            ];
-        }
+        $properties = MetadataFieldMapper::buildPropertySuggestions([
+            'title' => $title,
+            'abstract' => $snippet,
+        ], $availableTerms, $availableProperties);
 
         // Always return the same schema our real providers will return.
         return [
             'title' => $title,
+            'alternative_title' => null,
             'creators' => [],
+            'contributors' => [],
             'date' => null,
             'publisher' => null,
             'publication' => null,
@@ -39,6 +37,14 @@ class DummyProvider implements ProviderInterface
             'subjects' => [],
             'identifiers' => [],
             'language' => null,
+            'type' => null,
+            'extent' => null,
+            'rights' => null,
+            'spatial' => null,
+            'temporal' => null,
+            'relation' => null,
+            'source' => null,
+            'format' => null,
             'properties' => $properties,
             'confidence' => [
                 'title' => 0.10,

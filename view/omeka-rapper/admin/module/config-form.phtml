@@ -44,6 +44,28 @@ $modelsEndpoint = $this->url('admin/omeka-rapper', ['action' => 'models']);
 
     <div class="field">
         <div class="field-meta">
+            <label for="omekarapper_phpcli_path"><?php echo $escape($translate('PHP CLI path')); ?></label>
+            <div class="field-description">
+                <?php
+                $effectivePhpCliPath = (string) ($settings['effective_phpcli_path'] ?? '');
+                $pathValid = !empty($settings['phpcli_path_valid']);
+                if ($effectivePhpCliPath === '') {
+                    echo $escape($translate('Optional, but required for background jobs. No effective PHP CLI path is currently configured.'));
+                } elseif ($pathValid) {
+                    echo $escape(sprintf($translate('Optional override for Omeka background jobs. Current effective path: %s'), $effectivePhpCliPath));
+                } else {
+                    echo $escape(sprintf($translate('Optional override for Omeka background jobs. Current effective path appears invalid: %s'), $effectivePhpCliPath));
+                }
+                ?>
+            </div>
+        </div>
+        <div class="inputs">
+            <input type="text" id="omekarapper_phpcli_path" name="omekarapper_phpcli_path" value="<?php echo $escape($settings['phpcli_path'] ?? ''); ?>" placeholder="/opt/homebrew/bin/php">
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="field-meta">
             <label for="omekarapper_openai_enabled"><?php echo $escape($translate('Enable ChatGPT provider')); ?></label>
             <div class="field-description"><?php echo $escape($translate('Uses the OpenAI Responses API.')); ?></div>
         </div>

@@ -35,9 +35,12 @@ return [
         'factories' => [
             Service\AiClientManager::class => Factory\AiClientManagerFactory::class,
             Service\PdfTextExtractor::class => Factory\PdfTextExtractorFactory::class,
+            Service\SuggestionPipeline::class => Factory\SuggestionPipelineFactory::class,
+            'Omeka\Job\DispatchStrategy\PhpCli' => Factory\PhpCliDispatchStrategyFactory::class,
         ],
         'invokables' => [
             Service\ProviderModelCatalog::class => Service\ProviderModelCatalog::class,
+            Service\SuggestionResultStore::class => Service\SuggestionResultStore::class,
             Service\SuggestionEnricher::class => Service\SuggestionEnricher::class,
         ],
     ],

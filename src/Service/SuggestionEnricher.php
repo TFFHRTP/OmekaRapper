@@ -4,9 +4,9 @@ namespace OmekaRapper\Service;
 
 class SuggestionEnricher
 {
-    public function enrich(array $suggestions, string $text, array $availableTerms = []): array
+    public function enrich(array $suggestions, string $text, array $availableTerms = [], array $availableProperties = []): array
     {
-        $heuristic = $this->extractHeuristics($text, $availableTerms);
+        $heuristic = $this->extractHeuristics($text, $availableTerms, $availableProperties);
 
         $merged = [
             'title' => $this->firstNonEmpty($suggestions['title'] ?? null, $heuristic['title'] ?? null),
@@ -18,6 +18,16 @@ class SuggestionEnricher
             'subjects' => $this->mergeLists($suggestions['subjects'] ?? [], $heuristic['subjects'] ?? []),
             'identifiers' => $this->mergeLists($suggestions['identifiers'] ?? [], $heuristic['identifiers'] ?? []),
             'language' => $this->firstNonEmpty($suggestions['language'] ?? null, $heuristic['language'] ?? null),
+            'contributors' => $this->mergeLists($suggestions['contributors'] ?? [], $heuristic['contributors'] ?? []),
+            'type' => $this->firstNonEmpty($suggestions['type'] ?? null, $heuristic['type'] ?? null),
+            'extent' => $this->firstNonEmpty($suggestions['extent'] ?? null, $heuristic['extent'] ?? null),
+            'rights' => $this->firstNonEmpty($suggestions['rights'] ?? null, $heuristic['rights'] ?? null),
+            'spatial' => $this->firstNonEmpty($suggestions['spatial'] ?? null, $heuristic['spatial'] ?? null),
+            'temporal' => $this->firstNonEmpty($suggestions['temporal'] ?? null, $heuristic['temporal'] ?? null),
+            'relation' => $this->firstNonEmpty($suggestions['relation'] ?? null, $heuristic['relation'] ?? null),
+            'source' => $this->firstNonEmpty($suggestions['source'] ?? null, $heuristic['source'] ?? null),
+            'alternative_title' => $this->firstNonEmpty($suggestions['alternative_title'] ?? null, $heuristic['alternative_title'] ?? null),
+            'format' => $this->firstNonEmpty($suggestions['format'] ?? null, $heuristic['format'] ?? null),
             'confidence' => is_array($suggestions['confidence'] ?? null) ? $suggestions['confidence'] : [],
             'raw' => is_array($suggestions['raw'] ?? null) ? $suggestions['raw'] : [],
         ];
@@ -26,13 +36,15 @@ class SuggestionEnricher
         $merged['properties'] = $this->mergeProperties(
             $existingProperties,
             $heuristic['properties'] ?? [],
-            $merged
+            $merged,
+            $availableTerms,
+            $availableProperties
         );
 
         return $merged;
     }
 
-    private function extractHeuristics(string $text, array $availableTerms): array
+    private function extractHeuristics(string $text, array $availableTerms, array $availableProperties): array
     {
         $text = trim($text);
         $lines = array_values(array_filter(array_map('trim', preg_split('/\R+/', $text) ?: [])));
@@ -45,6 +57,41 @@ class SuggestionEnricher
         $publication = $this->guessLabeledValue($lines, ['journal', 'publication', 'source']);
         $subjects = $this->guessSubjects($lines);
         $language = $this->guessLanguage($text);
+        $extra = [
+            'contributor' => $this->guessLabeledList($lines, ['contributor', 'contributors', 'editor', 'editors']),
+            'type' => $this->guessLabeledValue($lines, ['type', 'resource type', 'document type']),
+            'extent' => $this->guessLabeledValue($lines, ['extent', 'pages', 'pagination', 'length']),
+            'rights' => $this->guessLabeledValue($lines, ['rights', 'license', 'copyright']),
+            'spatial' => $this->guessLabeledValue($lines, ['spatial', 'place', 'location', 'coverage']),
+            'temporal' => $this->guessLabeledValue($lines, ['temporal', 'period']),
+            'relation' => $this->guessLabeledValue($lines, ['relation', 'related']),
+            'source' => $this->guessLabeledValue($lines, ['source']),
+            'alternative_title' => $this->guessLabeledValue($lines, ['alternative title', 'alt title']),
+            'format' => $this->guessLabeledValue($lines, ['format', 'medium']),
+        ];
+
+        $properties = $this->buildProperties([
+            'title' => $title,
+            'creators' => $creators,
+            'date' => $date,
+            'publisher' => $publisher,
+            'publication' => $publication,
+            'abstract' => $abstract,
+            'subjects' => $subjects,
+            'identifiers' => $identifiers,
+            'language' => $language,
+            'contributors' => $extra['contributor'] ?? [],
+            'type' => $extra['type'] ?? null,
+            'extent' => $extra['extent'] ?? null,
+            'rights' => $extra['rights'] ?? null,
+            'spatial' => $extra['spatial'] ?? null,
+            'temporal' => $extra['temporal'] ?? null,
+            'relation' => $extra['relation'] ?? null,
+            'source' => $extra['source'] ?? null,
+            'alternative_title' => $extra['alternative_title'] ?? null,
+            'format' => $extra['format'] ?? null,
+            'extra' => $extra,
+        ], $availableTerms, $availableProperties);
 
         return [
             'title' => $title,
@@ -56,17 +103,18 @@ class SuggestionEnricher
             'subjects' => $subjects,
             'identifiers' => $identifiers,
             'language' => $language,
-            'properties' => $this->buildProperties([
-                'title' => $title,
-                'creators' => $creators,
-                'date' => $date,
-                'publisher' => $publisher,
-                'publication' => $publication,
-                'abstract' => $abstract,
-                'subjects' => $subjects,
-                'identifiers' => $identifiers,
-                'language' => $language,
-            ], $availableTerms),
+            'contributors' => $extra['contributor'] ?? [],
+            'type' => $extra['type'] ?? null,
+            'extent' => $extra['extent'] ?? null,
+            'rights' => $extra['rights'] ?? null,
+            'spatial' => $extra['spatial'] ?? null,
+            'temporal' => $extra['temporal'] ?? null,
+            'relation' => $extra['relation'] ?? null,
+            'source' => $extra['source'] ?? null,
+            'alternative_title' => $extra['alternative_title'] ?? null,
+            'format' => $extra['format'] ?? null,
+            'extra' => $extra,
+            'properties' => $properties,
         ];
     }
 
@@ -151,6 +199,12 @@ class SuggestionEnricher
         return null;
     }
 
+    private function guessLabeledList(array $lines, array $labels): array
+    {
+        $value = $this->guessLabeledValue($lines, $labels);
+        return $value !== null ? $this->splitNames($value) : [];
+    }
+
     private function guessSubjects(array $lines): array
     {
         foreach ($lines as $line) {
@@ -171,43 +225,15 @@ class SuggestionEnricher
         return null;
     }
 
-    private function buildProperties(array $data, array $availableTerms): array
+    private function buildProperties(array $data, array $availableTerms, array $availableProperties = []): array
     {
-        $available = array_fill_keys($availableTerms, true);
-        $map = [
-            'dcterms:title' => $this->listify($data['title'] ?? null),
-            'dcterms:creator' => $this->listify($data['creators'] ?? []),
-            'dcterms:date' => $this->listify($data['date'] ?? null),
-            'dcterms:publisher' => $this->listify($data['publisher'] ?? null),
-            'dcterms:isPartOf' => $this->listify($data['publication'] ?? null),
-            'dcterms:abstract' => $this->listify($data['abstract'] ?? null),
-            'dcterms:description' => $this->listify($data['abstract'] ?? null),
-            'dcterms:subject' => $this->listify($data['subjects'] ?? []),
-            'dcterms:identifier' => $this->listify($data['identifiers'] ?? []),
-            'dcterms:language' => $this->listify($data['language'] ?? null),
-        ];
-
-        $properties = [];
-        foreach ($map as $term => $values) {
-            if ($values === []) {
-                continue;
-            }
-            if ($available !== [] && !isset($available[$term])) {
-                continue;
-            }
-            if ($term === 'dcterms:description' && isset($available['dcterms:abstract'])) {
-                continue;
-            }
-            $properties[] = ['term' => $term, 'values' => $values];
-        }
-
-        return $properties;
+        return MetadataFieldMapper::buildPropertySuggestions($data, $availableTerms, $availableProperties);
     }
 
-    private function mergeProperties(array $existing, array $heuristic, array $merged): array
+    private function mergeProperties(array $existing, array $heuristic, array $merged, array $availableTerms, array $availableProperties): array
     {
         $map = [];
-        foreach ([$existing, $heuristic, $this->buildProperties($merged, [])] as $properties) {
+        foreach ([$existing, $heuristic, $this->buildProperties($merged, $availableTerms, $availableProperties)] as $properties) {
             foreach ($properties as $property) {
                 if (!is_array($property)) {
                     continue;
